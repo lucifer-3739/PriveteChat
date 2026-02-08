@@ -3,7 +3,8 @@ import { Elysia, t } from "elysia"
 import { nanoid } from "nanoid"
 import { authMiddleware } from "./auth"
 import { z } from "zod"
-import { Message, realtime } from "@/lib/realtime"
+import { realtime } from "@/lib/realtime"
+import { Message } from "@/lib/realtime-config"
 
 const ROOM_TTL_SECONDS = 60 * 60 * 24
 
