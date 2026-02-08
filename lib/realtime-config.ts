@@ -20,7 +20,4 @@ export const realtimeSchema = {
   },
 }
 
-export type RealtimeEvents = {
-  "chat.message": Message
-  "chat.destroy": { isDestroyed: true }
-}
+
