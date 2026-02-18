@@ -3,7 +3,7 @@
 import { useUsername } from "@/hooks/use-username"
 import { client } from "@/lib/client"
 import { useRealtime } from "@/lib/realtime-client"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { format } from "date-fns"
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
@@ -28,6 +28,7 @@ interface RoomClientProps {
 
 const RoomClient = ({ roomId, initialMessages, initialTTL }: RoomClientProps) => {
   const router = useRouter()
+  const queryClient = useQueryClient()
 
   const { username } = useUsername()
   const [input, setInput] = useState("")
@@ -70,7 +71,7 @@ const RoomClient = ({ roomId, initialMessages, initialTTL }: RoomClientProps) =>
     return () => clearInterval(interval)
   }, [timeRemaining, router])
 
-  const { data: messages, refetch } = useQuery({
+  const { data: messages } = useQuery({
     queryKey: ["messages", roomId],
     queryFn: async () => {
       const res = await client.messages.get({ query: { roomId } })
@@ -81,18 +82,31 @@ const RoomClient = ({ roomId, initialMessages, initialTTL }: RoomClientProps) =>
 
   const { mutate: sendMessage, isPending } = useMutation({
     mutationFn: async ({ text }: { text: string }) => {
-      await client.messages.post({ sender: username, text }, { query: { roomId } })
-
+      // Clear input immediately for better perceived performance
       setInput("")
+      inputRef.current?.focus()
+      
+      await client.messages.post({ sender: username, text }, { query: { roomId } })
     },
   })
 
   useRealtime({
     channels: [roomId],
     events: ["chat.message", "chat.destroy"],
-    onData: ({ event }) => {
+    onData: (eventData) => {
+      const { event, data } = eventData
       if (event === "chat.message") {
-        refetch()
+        // Optimistically update the cache instead of refetching
+        const newMessage = data as Message
+        queryClient.setQueryData(["messages", roomId], (old: { messages: Message[] } | undefined) => {
+          if (!old) return { messages: [newMessage] }
+          // Deduplicate based on ID just in case
+          if (old.messages.some(m => m.id === newMessage.id)) return old
+          return {
+            ...old,
+            messages: [...old.messages, newMessage]
+          }
+        })
       }
 
       if (event === "chat.destroy") {
@@ -113,6 +127,12 @@ const RoomClient = ({ roomId, initialMessages, initialTTL }: RoomClientProps) =>
     setCopyStatus("COPIED!")
     setTimeout(() => setCopyStatus("COPY"), 2000)
   }
+
+  // Auto-scroll to bottom when messages change
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages?.messages.length])
 
   return (
     <main className="flex flex-col h-screen max-h-screen overflow-hidden">
@@ -189,6 +209,7 @@ const RoomClient = ({ roomId, initialMessages, initialTTL }: RoomClientProps) =>
             </div>
           </div>
         ))}
+        <div ref={messagesEndRef} />
       </div>
 
       <div className="p-4 border-t border-zinc-800 bg-zinc-900/30">
@@ -199,12 +220,12 @@ const RoomClient = ({ roomId, initialMessages, initialTTL }: RoomClientProps) =>
             </span>
             <input
               autoFocus
+              ref={inputRef}
               type="text"
               value={input}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && input.trim()) {
                   sendMessage({ text: input })
-                  inputRef.current?.focus()
                 }
               }}
               placeholder="Type message..."
@@ -216,7 +237,6 @@ const RoomClient = ({ roomId, initialMessages, initialTTL }: RoomClientProps) =>
           <button
             onClick={() => {
               sendMessage({ text: input })
-              inputRef.current?.focus()
             }}
             disabled={!input.trim() || isPending}
             className="bg-zinc-800 text-zinc-400 px-6 text-sm font-bold hover:text-zinc-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
