@@ -40,7 +40,7 @@ A secure, ephemeral, real-time chat application built with Next.js, Upstash Redi
 1.  **Clone the repository:**
 
     ```bash
-    git clone https://github.com/yourusername/private-chat.git
+    git clone https://github.com/lucifer-3739/private-chat.git
     cd private-chat
     ```
 
